@@ -32,10 +32,16 @@ show_help() {
   echo "  ./install.sh [OPTION]"
   echo ""
   echo -e "${BOLD}OPTIONS:${NC}"
-  echo "  --global, -g    Install 'git-push', 'push', and 'pre-push-check' globally to ~/.local/bin (default)"
-  echo "  --system, -s    Install globally to /usr/local/bin (requires sudo)"
-  echo "  --hooks         Install version-controlled pre-push hooks into current Git repository (.githooks/)"
-  echo "  -h, --help      Display this help message"
+  echo "  --global, -g         Install 'git-push', 'push', and 'pre-push-check' globally to ~/.local/bin (default)"
+  echo "  --system, -s         Install globally to /usr/local/bin (requires sudo)"
+  echo "  --hooks [threshold]  Install version-controlled pre-push hooks and set your coverage threshold (e.g. ./install.sh --hooks 85)"
+  echo "  -h, --help           Display this help message"
+  echo ""
+  echo -e "${BOLD}HOW TO SET OR CHANGE YOUR COVERAGE THRESHOLD:${NC}"
+  echo "  1. During hook setup:     ./install.sh --hooks 85"
+  echo "  2. CLI helper:            pre-push-check --set-threshold 85"
+  echo "  3. Directly in config:    echo \"85\" > .coverage-threshold"
+  echo "  4. Single push override:  MIN_COVERAGE=85 git push"
 }
 
 install_global() {
@@ -65,6 +71,7 @@ install_global() {
 }
 
 install_repo_hooks() {
+  local desired_threshold="$1"
   local repo_dir="$(pwd)"
   if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     echo -e "${RED}❌ Error: $(pwd) is not a Git repository.${NC}"
@@ -89,6 +96,37 @@ install_repo_hooks() {
 
   echo -e "${GREEN}✅ Git pre-push hook active via .githooks/!${NC}"
   echo -e "   Commit .githooks/ to share with team members automatically."
+
+  # Configure Coverage Threshold (User-defined, no fixed amount mandated)
+  if [ -n "$desired_threshold" ]; then
+    echo "$desired_threshold" > .coverage-threshold
+    echo -e "${GREEN}🎯 Target coverage threshold set to ${BOLD}${desired_threshold}%${NC} (.coverage-threshold)${NC}"
+  elif [ -f ".coverage-threshold" ]; then
+    CURRENT_THRESH="$(cat .coverage-threshold | tr -d '[:space:]')"
+    echo -e "${CYAN}🎯 Existing repository coverage threshold detected: ${BOLD}${CURRENT_THRESH}%${NC} (.coverage-threshold)${NC}"
+  else
+    if [ -t 0 ]; then
+      echo ""
+      echo -e "${YELLOW}⚙️  Configure Coverage Quality Gate:${NC}"
+      echo "   We do not mandate a fixed percentage. Enter your repository's desired target:"
+      read -r -p "   Minimum coverage percentage (e.g. 70, 75, 80, 85, 90) [Default: 80]: " INPUT_THRESH
+      INPUT_THRESH="${INPUT_THRESH:-80}"
+      echo "$INPUT_THRESH" > .coverage-threshold
+      echo -e "${GREEN}🎯 Saved ${BOLD}${INPUT_THRESH}%${NC} in .coverage-threshold${NC}"
+    else
+      echo "80" > .coverage-threshold
+      echo -e "${YELLOW}ℹ️  Created .coverage-threshold with initial target 80%.${NC}"
+    fi
+  fi
+
+  echo ""
+  echo -e "${BLUE}====================================================${NC}"
+  echo -e "${BOLD}💡 HOW TO CONFIGURE OR CHANGE YOUR THRESHOLD ANYTIME:${NC}"
+  echo -e "   1. Edit file directly:   ${BOLD}echo \"<new_value>\" > .coverage-threshold${NC}"
+  echo -e "   2. Use CLI helper:       ${BOLD}pre-push-check --set-threshold <new_value>${NC}"
+  echo -e "   3. Re-run installer:     ${BOLD}./install.sh --hooks <new_value>${NC}"
+  echo -e "   4. Override single push: ${BOLD}MIN_COVERAGE=<new_value> git push${NC}"
+  echo -e "${BLUE}====================================================${NC}"
 }
 
 MODE="${1:-global}"
@@ -101,7 +139,7 @@ case "$MODE" in
     install_global "/usr/local/bin"
     ;;
   --hooks|hooks)
-    install_repo_hooks
+    install_repo_hooks "$2"
     ;;
   -h|--help)
     show_help

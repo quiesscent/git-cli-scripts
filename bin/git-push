@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# git-push / push - Opinionated Smart Commit & Push to Active Git Branch
-# Part of git-cli-scripts (https://github.com/appframesystems/git-cli-scripts)
+# git-push / push - Smart Commit & Push to Active Git Branch
+# Part of git-cli-scripts (https://github.com/quiesscent/git-cli-scripts)
 # License: MIT
 # ==============================================================================
 set -e
@@ -28,7 +28,7 @@ fi
 REMOTE_NAME="${GIT_PUSH_REMOTE:-origin}"
 
 show_help() {
-  echo -e "${BOLD}git-push / push${NC} - Opinionated Active-Branch Git Push Utility."
+  echo -e "${BOLD}git-push / push${NC} - Active-Branch Git Push Utility."
   echo ""
   echo -e "${BOLD}USAGE:${NC}"
   echo "  # 1. Inside any Git repository:"
@@ -39,7 +39,7 @@ show_help() {
   echo "  push <folder_name_or_alias> \"<commit_message>\""
   echo "  git-push <folder_name_or_alias> \"<commit_message>\""
   echo ""
-  echo -e "${BOLD}OPINIONATED GUARDS:${NC}"
+  echo -e "${BOLD}SAFETY GUARDS:${NC}"
   echo "  🛡️  Protected Branch Guard: Confirms before pushing directly to main/master/production."
   echo "  📝 Conventional Commit Linter: Rejects sloppy placeholders ('wip', 'fix', 'update')."
   echo "  🚫 Detached HEAD Guard: Blocks pushes when HEAD is detached."
@@ -62,7 +62,7 @@ show_help() {
 }
 
 if [ "$1" = "-v" ] || [ "$1" = "--version" ]; then
-  echo "git-push version 2.0.0 (opinionated)"
+  echo "git-push version 2.0.0"
   exit 0
 fi
 
@@ -132,19 +132,19 @@ fi
 REPO_NAME="$(basename "$TARGET_DIR")"
 ACTIVE_BRANCH="$(git -C "$TARGET_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
 
-# 1. OPINIONATED GUARD: Detached HEAD protection
+# 1. Detached HEAD protection
 if [ -z "$ACTIVE_BRANCH" ] || [ "$ACTIVE_BRANCH" = "HEAD" ]; then
-  echo -e "${RED}❌ OPINIONATED GUARD: Detached HEAD detected in ${REPO_NAME}.${NC}"
+  echo -e "${RED}❌ PUSH GUARD: Detached HEAD detected in ${REPO_NAME}.${NC}"
   echo "Pushing from a detached HEAD leads to lost commits on remote."
   echo "Switch to or create a branch first:"
   echo "  git -C \"$TARGET_DIR\" checkout -b feature-branch-name"
   exit 1
 fi
 
-# 2. OPINIONATED GUARD: Protected branch safety (main / master / production)
+# 2. Protected branch safety (main / master / production)
 if [ "$ACTIVE_BRANCH" = "main" ] || [ "$ACTIVE_BRANCH" = "master" ] || [ "$ACTIVE_BRANCH" = "production" ]; then
   if [ "${ALLOW_MAIN_PUSH:-0}" != "1" ]; then
-    echo -e "${YELLOW}⚠️  OPINIONATED GUARD: You are pushing directly to '${ACTIVE_BRANCH}' in ${REPO_NAME}.${NC}"
+    echo -e "${YELLOW}⚠️  BRANCH GUARD: You are pushing directly to '${ACTIVE_BRANCH}' in ${REPO_NAME}.${NC}"
     if [ -t 0 ]; then
       read -r -p "Direct pushes to production branches bypass PR reviews. Proceed anyway? [y/N]: " CONFIRM_PUSH
       if [[ ! "$CONFIRM_PUSH" =~ ^[Yy]$ ]]; then
@@ -171,13 +171,13 @@ if [ -z "$COMMIT_MSG" ]; then
   fi
 fi
 
-# 4. OPINIONATED GUARD: Conventional Commits & Quality Linter
+# 4. Conventional Commits & Quality Linter
 if [ "${SKIP_COMMIT_LINT:-0}" != "1" ]; then
   # Reject sloppy single-word placeholders
   LOWER_MSG="$(echo "$COMMIT_MSG" | tr '[:upper:]' '[:lower:]' | xargs)"
   case "$LOWER_MSG" in
     wip|"fix"|"update"|"test"|"changes"|"commit"|"done"|"asdf"|"temp"|"save")
-      echo -e "${RED}❌ OPINIONATED REJECTION: '${COMMIT_MSG}' is a sloppy commit message.${NC}"
+      echo -e "${RED}❌ COMMIT REJECTED: '${COMMIT_MSG}' is a placeholder or sloppy commit message.${NC}"
       echo -e "${YELLOW}👉 High-performing teams write descriptive commit messages.${NC}"
       echo -e "   Example: 'feat(auth): support biometric login' or 'fix(api): correct null handling'"
       exit 1
@@ -185,7 +185,7 @@ if [ "${SKIP_COMMIT_LINT:-0}" != "1" ]; then
   esac
 
   if [ "${#COMMIT_MSG}" -lt 6 ]; then
-    echo -e "${RED}❌ OPINIONATED REJECTION: Commit message is too short (min 6 characters required).${NC}"
+    echo -e "${RED}❌ COMMIT REJECTED: Commit message is too short (min 6 characters required).${NC}"
     exit 1
   fi
 

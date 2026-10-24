@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# pre-push-check - Opinionated Pre-Push Quality & Coverage Gatekeeper
-# Part of git-cli-scripts (https://github.com/appframesystems/git-cli-scripts)
+# pre-push-check - Pre-Push Quality & Coverage Gatekeeper
+# Part of git-cli-scripts (https://github.com/quiesscent/git-cli-scripts)
 # License: MIT
 # ==============================================================================
-# OPINIONATED MANIFEST:
+# QUALITY MANIFEST:
 # 1. Zero Broken Windows: Static analysis must report ZERO errors.
 # 2. 100% Green Test Suite: All unit & widget tests must pass. No flaky skips.
-# 3. User-Defined Strict Coverage: Your repository decides its own coverage target
-#    via .coverage-threshold. No one imposes an arbitrary fixed number on you.
+# 3. User-Owned Strict Quality Gates: You and your team enter your own threshold.
+#    The tool strictly enforces your chosen target without dictating a fixed amount.
 # ==============================================================================
 set -e
 
@@ -37,7 +37,12 @@ cd "$REPO_ROOT"
 APP_NAME="$(basename "$REPO_ROOT")"
 
 show_help() {
-  echo -e "${BOLD}pre-push-check${NC} - Opinionated Pre-Push Quality & Coverage Gatekeeper"
+  echo -e "${BOLD}pre-push-check${NC} - Pre-Push Quality & Coverage Gatekeeper"
+  echo ""
+  echo -e "${BOLD}PHILOSOPHY:${NC}"
+  echo "  We do not dictate an arbitrary fixed threshold (like 70% or 80%)."
+  echo "  Instead, you enter your own threshold target. Once configured,"
+  echo "  the gate strictly enforces your target on every push with zero tolerance."
   echo ""
   echo -e "${BOLD}USAGE:${NC}"
   echo "  pre-push-check [OPTIONS]"
@@ -45,23 +50,27 @@ show_help() {
   echo -e "${BOLD}OPTIONS:${NC}"
   echo "  -s, --set-threshold <N>   Set and save minimum coverage threshold in .coverage-threshold"
   echo "  -t, --threshold <N>       Run checks with a one-time custom coverage threshold"
+  echo "  -i, --info                Display active threshold and source"
   echo "  -h, --help                Show this help message and exit"
   echo ""
   echo -e "${BOLD}HOW TO SET OR CHANGE YOUR COVERAGE THRESHOLD:${NC}"
   echo "  1. CLI command:           pre-push-check --set-threshold 85"
   echo "  2. Write to config file:  echo \"85\" > .coverage-threshold"
-  echo "  3. Environment override:  MIN_COVERAGE=85 git push"
+  echo "  3. During hook setup:     ./install.sh --hooks 85"
+  echo "  4. Environment override:  MIN_COVERAGE=85 git push"
 }
 
 # Handle --set-threshold
 if [ "$1" = "-s" ] || [ "$1" = "--set-threshold" ]; then
   if [ -z "$2" ]; then
-    echo -e "${RED}❌ Error: Please specify a threshold percentage (e.g. pre-push-check --set-threshold 85)${NC}"
+    echo -e "${RED}❌ Error: Please specify your desired threshold percentage (e.g. pre-push-check --set-threshold 85)${NC}"
     exit 1
   fi
   echo "$2" > .coverage-threshold
   echo -e "${GREEN}🎯 Coverage threshold set to ${BOLD}$2%${NC} (saved in .coverage-threshold)${NC}"
   echo -e "   Commit .coverage-threshold to your repository to share with your team."
+  echo ""
+  echo -e "${CYAN}💡 You can change this anytime by running: pre-push-check --set-threshold <new_value>${NC}"
   exit 0
 fi
 
@@ -96,17 +105,33 @@ elif [ -f "tool/check_coverage.dart" ]; then
   fi
 fi
 
-# If no threshold is configured anywhere, prompt interactively or guide user
+# Handle --info
+if [ "$1" = "-i" ] || [ "$1" = "--info" ]; then
+  echo -e "${BOLD}Coverage Threshold Configuration for ${CYAN}${APP_NAME}${NC}:"
+  if [ -n "$MIN_COVERAGE" ]; then
+    echo -e "  Current Threshold: ${GREEN}${BOLD}${MIN_COVERAGE}%${NC} (${THRESHOLD_SOURCE})"
+  else
+    echo -e "  Current Threshold: ${YELLOW}Not configured${NC}"
+  fi
+  echo ""
+  echo -e "${CYAN}💡 To change your threshold:${NC}"
+  echo -e "  pre-push-check --set-threshold <new_percentage>"
+  echo -e "  echo \"<new_percentage>\" > .coverage-threshold"
+  exit 0
+fi
+
+# If no threshold is configured anywhere, allow the user to enter their own threshold
 if [ -z "$MIN_COVERAGE" ]; then
   if [ -t 0 ]; then
     echo -e "${YELLOW}⚙️  No test coverage threshold configured yet for ${APP_NAME}.${NC}"
-    echo "Enter your repository's desired minimum coverage percentage (e.g. 75, 80, 85, 90):"
+    echo "Enter your repository's desired minimum coverage percentage (e.g. 70, 75, 80, 85, 90):"
     read -r -p "Target threshold: " USER_THRESH
     if [ -n "$USER_THRESH" ]; then
       echo "$USER_THRESH" > .coverage-threshold
       MIN_COVERAGE="$USER_THRESH"
-      THRESHOLD_SOURCE=".coverage-threshold (newly set)"
+      THRESHOLD_SOURCE=".coverage-threshold (saved by user)"
       echo -e "${GREEN}✅ Saved ${MIN_COVERAGE}% in .coverage-threshold${NC}"
+      echo -e "   You can change this anytime with: ${BOLD}pre-push-check --set-threshold <new_value>${NC}"
     else
       MIN_COVERAGE="80"
       THRESHOLD_SOURCE="default fallback (80%)"
@@ -118,7 +143,7 @@ if [ -z "$MIN_COVERAGE" ]; then
 fi
 
 echo -e "${BLUE}====================================================${NC}"
-echo -e "${BOLD}🛡️  OPINIONATED PRE-PUSH GATE:${NC} ${CYAN}${APP_NAME}${NC}"
+echo -e "${BOLD}🛡️  PRE-PUSH QUALITY GATE:${NC} ${CYAN}${APP_NAME}${NC}"
 echo -e "   Target Coverage:   ${BOLD}>= ${MIN_COVERAGE}.00%${NC} (${THRESHOLD_SOURCE})"
 echo -e "   Analysis Policy:   ${BOLD}Zero-Tolerance (0 issues)${NC}"
 echo -e "${BLUE}====================================================${NC}"
@@ -134,7 +159,7 @@ if [ -f "pubspec.yaml" ]; then
   if flutter analyze; then
     echo -e "${GREEN}✅ Analysis passed: 0 issues found.${NC}"
   else
-    echo -e "${RED}❌ OPINIONATED GATE FAILED: flutter analyze found issues!${NC}"
+    echo -e "${RED}❌ QUALITY GATE FAILED: flutter analyze found issues!${NC}"
     echo -e "${YELLOW}👉 Clean code policy: Resolve all static analysis warnings before pushing.${NC}"
     exit 1
   fi
@@ -144,7 +169,7 @@ if [ -f "pubspec.yaml" ]; then
   if flutter test --coverage; then
     echo -e "${GREEN}✅ All Flutter tests passed!${NC}"
   else
-    echo -e "${RED}❌ OPINIONATED GATE FAILED: One or more Flutter tests failed!${NC}"
+    echo -e "${RED}❌ QUALITY GATE FAILED: One or more Flutter tests failed!${NC}"
     echo -e "${YELLOW}👉 Broken code cannot reach remote. Fix failing tests first.${NC}"
     exit 1
   fi
@@ -153,7 +178,17 @@ if [ -f "pubspec.yaml" ]; then
   echo -e "📊 Step 3/3: Evaluating code coverage against ${BOLD}${MIN_COVERAGE}%${NC} gate..."
   
   if [ -f "tool/check_coverage.dart" ]; then
-    dart run tool/check_coverage.dart --min "$MIN_COVERAGE"
+    if ! dart run tool/check_coverage.dart --min "$MIN_COVERAGE"; then
+      echo ""
+      echo -e "${RED}❌ QUALITY GATE FAILED: Coverage is below your configured ${MIN_COVERAGE}% target.${NC}"
+      echo ""
+      echo -e "${CYAN}💡 HOW TO CONFIGURE OR CHANGE YOUR THRESHOLD FOR THIS REPOSITORY:${NC}"
+      echo -e "   You have full control over your project threshold:"
+      echo -e "   1. Update threshold file:       ${BOLD}echo \"<new_value>\" > .coverage-threshold${NC}"
+      echo -e "   2. Use CLI helper command:      ${BOLD}pre-push-check --set-threshold <new_value>${NC}"
+      echo -e "   3. Override for this push only: ${BOLD}MIN_COVERAGE=<new_value> git push${NC}"
+      exit 1
+    fi
   elif [ -f "coverage/lcov.info" ]; then
     TOTAL_LINES=0
     HIT_LINES=0
@@ -180,18 +215,19 @@ if [ -f "pubspec.yaml" ]; then
 
       echo -e "   Total Executable Lines: ${TOTAL_LINES}"
       echo -e "   Covered Lines:          ${HIT_LINES}"
-      echo -e "   Overall Coverage:       ${BOLD}${COVERAGE_STR}${NC} (Required: >= ${REQUIRED_STR})"
+      echo -e "   Overall Coverage:       ${BOLD}${COVERAGE_STR}${NC} (Configured Target: >= ${REQUIRED_STR})"
 
       REQ_BPS=$((MIN_COVERAGE * 100))
       if [ "$COVERAGE_BPS" -lt "$REQ_BPS" ]; then
         NEEDED_LINES=$(( (REQ_BPS * TOTAL_LINES / 10000) - HIT_LINES ))
-        echo -e "${RED}❌ OPINIONATED GATE FAILED: Coverage (${COVERAGE_STR}) is below required ${REQUIRED_STR}!${NC}"
+        echo -e "${RED}❌ QUALITY GATE FAILED: Coverage (${COVERAGE_STR}) is below your configured ${REQUIRED_STR}!${NC}"
         echo -e "${YELLOW}👉 Deficit: Approximately ${NEEDED_LINES} more lines must be covered by tests.${NC}"
         echo ""
-        echo -e "${CYAN}💡 Want to change or customize your threshold for this repository?${NC}"
-        echo -e "   Run: ${BOLD}echo \"<new_value>\" > .coverage-threshold${NC}"
-        echo -e "   Or:  ${BOLD}pre-push-check --set-threshold <new_value>${NC}"
-        echo -e "   Or override for this push only: ${BOLD}MIN_COVERAGE=<new_value> git push${NC}"
+        echo -e "${CYAN}💡 HOW TO CONFIGURE OR CHANGE YOUR THRESHOLD FOR THIS REPOSITORY:${NC}"
+        echo -e "   You have full control over your project threshold:"
+        echo -e "   1. Update threshold file:       ${BOLD}echo \"<new_value>\" > .coverage-threshold${NC}"
+        echo -e "   2. Use CLI helper command:      ${BOLD}pre-push-check --set-threshold <new_value>${NC}"
+        echo -e "   3. Override for this push only: ${BOLD}MIN_COVERAGE=<new_value> git push${NC}"
         exit 1
       else
         echo -e "${GREEN}✅ Coverage gate passed! (${COVERAGE_STR} >= ${REQUIRED_STR})${NC}"
@@ -222,7 +258,7 @@ elif [ -f "package.json" ]; then
     if $PKG_MGR run lint; then
       echo -e "${GREEN}✅ Linter passed: 0 errors.${NC}"
     else
-      echo -e "${RED}❌ OPINIONATED GATE FAILED: Linting errors detected!${NC}"
+      echo -e "${RED}❌ QUALITY GATE FAILED: Linting errors detected!${NC}"
       echo -e "${YELLOW}👉 Run '${PKG_MGR} run lint -- --fix' or resolve linter errors before pushing.${NC}"
       exit 1
     fi
@@ -234,7 +270,7 @@ elif [ -f "package.json" ]; then
     if $PKG_MGR test; then
       echo -e "${GREEN}✅ All tests passed!${NC}"
     else
-      echo -e "${RED}❌ OPINIONATED GATE FAILED: Test suite failure!${NC}"
+      echo -e "${RED}❌ QUALITY GATE FAILED: Test suite failure!${NC}"
       exit 1
     fi
   fi
@@ -280,6 +316,6 @@ else
 fi
 
 echo -e "${BLUE}====================================================${NC}"
-echo -e "${GREEN}🎉 All opinionated quality gates passed successfully!${NC}"
+echo -e "${GREEN}🎉 All quality gates passed successfully!${NC}"
 echo -e "${BLUE}====================================================${NC}"
 exit 0

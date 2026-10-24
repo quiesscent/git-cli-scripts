@@ -1,4 +1,4 @@
-# 🛡️ Opinionated Pre-Push Hooks — Automated Quality & Coverage Gates
+# 🛡️ Pre-Push Hooks — Automated Quality & Coverage Gates
 
 > Enforce strict static analysis, 100% passing test suites, and production code coverage gates directly on developers' machines before code ever reaches remote branches or pull requests.
 
@@ -6,8 +6,9 @@
 
 ## 📖 Table of Contents
 
-- [The Opinionated Quality Stance](#the-opinionated-quality-stance)
-- [Why Fixed 70% is Flawed & What We Do Instead](#why-fixed-70-is-flawed--what-we-do-instead)
+- [The Quality Philosophy](#the-quality-philosophy)
+- [User-Defined Quality Gates: No Mandated Fixed Amounts](#user-defined-quality-gates-no-mandated-fixed-amounts)
+- [How to Set, Inspect, or Change Your Coverage Threshold](#how-to-set-inspect-or-change-your-coverage-threshold)
 - [How `pre-push-check` Operates](#how-pre-push-check-operates)
   - [1. Flutter & Dart](#1-flutter--dart)
   - [2. Node.js & TypeScript](#2-nodejs--typescript)
@@ -19,13 +20,12 @@
   - [Step 3: Add the `post-merge` Hook](#step-3-add-the-post-merge-hook)
   - [Step 4: Configure Git to Use `.githooks`](#step-4-configure-git-to-use-githooks)
   - [Step 5: Provide a 1-Line Onboarding Setup Script](#step-5-provide-a-1-line-onboarding-setup-script)
-- [Customizing the Coverage Threshold](#customizing-the-coverage-threshold)
 - [Emergency Bypass (`--no-verify`)](#emergency-bypass---no-verify)
 - [Troubleshooting](#troubleshooting)
 
 ---
 
-## The Opinionated Quality Stance
+## The Quality Philosophy
 
 In most software teams, code quality is enforced after the fact:
 1. Developers push code.
@@ -33,29 +33,36 @@ In most software teams, code quality is enforced after the fact:
 3. CI fails due to a missed linter warning, a broken test, or degraded test coverage.
 4. The developer switches context, pulls, fixes, and pushes again.
 
-**Our opinionated stance is simple:**
+**Our quality philosophy is simple:**
 > **Remote CI should be a formal stamp of approval, never a debugging environment.**
-> If your code doesn't pass strict static analysis, if tests fail, or if test coverage drops below production standards, **it must not leave your machine.**
+> If your code doesn't pass strict static analysis, if tests fail, or if test coverage drops below your target, **it must not leave your machine.**
 
 ---
 
-## Why Fixed 70% is Flawed & What We Do Instead
+## User-Defined Quality Gates: No Mandated Fixed Amounts
 
-Many early tutorials suggest an arbitrary `70%` coverage target. In practice, fixed 70% has notable flaws:
-- **30% Untested Surface**: In a 10,000-line application, 70% coverage leaves **3,000 lines of unverified production code**.
-- **One Size Doesn't Fit All**: A security-critical authentication microservice might mandate **`90%`**, while an exploratory UI prototype might need **`75%`**.
-- **The "Good Enough" Plateau**: Developers write tests only until they hit 70.01% and stop, even if critical business logic remains unexercised.
+Many legacy tools and tutorials attempt to impose an arbitrary fixed amount—for example, hardcoding `>= 70%` or `>= 80%`.
 
-### The Opinionated Solution:
-1. **Opinionated Default (80%)**: We default to **`80.00%`**—the widely recognized engineering standard for resilient production software (Google, Martin Fowler, ISO).
-2. **Explicit Project-Defined Gates (`.coverage-threshold`)**: Each repository explicitly declares its required threshold in a `.coverage-threshold` file (e.g. `85` or `90`).
-3. **Zero-Warning Static Analysis**: Static analysis is not a suggestion. A single lint warning or analysis issue aborts the push immediately.
+In production engineering, **fixed tool-imposed amounts do not work**:
+- **Every repository has unique needs**: A security-critical authentication microservice might require **`95%`**, an established mobile app might hold **`80%`**, while a newly inherited legacy monolith might currently sit at **`55%`**.
+- **Fixed numbers encourage cheating**: When tools impose an arbitrary number, developers write hollow boilerplate tests purely to cross the line, without testing real failure scenarios.
+- **Tools shouldn't make architectural decisions for your team**: Your engineering team knows the maturity and criticality of your code better than any generic tool.
+
+### User-Defined Standards
+
+> **We do not tell you what your threshold must be. We strictly enforce whatever target you choose.**
+> **You enter your own threshold, and the toolchain strictly enforces your target on every single push.**
+
+You have complete control to set your threshold. Once configured:
+1. **Zero tolerance for regression**: Any push dropping below your configured target is immediately blocked.
+2. **Clear guidance**: If a check fails, the tool displays the exact line deficit and instructions on how to meet or adjust the threshold.
+3. **Team alignment**: Your threshold is committed to `.coverage-threshold` in Git, so everyone on the team adheres to the exact same standard.
 
 ---
 
 ## How `pre-push-check` Operates
 
-`pre-push-check` automatically inspects the repository and applies framework-specific opinionated gates:
+`pre-push-check` automatically inspects the repository and applies framework-specific quality gates:
 
 ### 1. Flutter & Dart
 Detected via `pubspec.yaml`:
@@ -68,7 +75,7 @@ Detected via `pubspec.yaml`:
 
 ```text
 ====================================================
-🛡️  OPINIONATED PRE-PUSH GATE: my_flutter_app
+🛡️  PRE-PUSH QUALITY GATE: my_flutter_app
    Target Coverage:   >= 80.00%
    Analysis Policy:   Zero-Tolerance (0 issues)
 ====================================================
@@ -83,7 +90,7 @@ Detected via `pubspec.yaml`:
    Overall Coverage:       82.00% (Required: >= 80.00%)
 ✅ Coverage gate passed! (82.00% >= 80.00%)
 ====================================================
-🎉 All opinionated quality gates passed successfully!
+🎉 All quality gates passed successfully!
 ====================================================
 ```
 
@@ -107,7 +114,7 @@ Detected via `go.mod`:
 
 ## Step-by-Step Implementation in Any Repository
 
-You can implement these opinionated gates in **any repository** in under 2 minutes:
+You can implement these quality gates in **any repository** in under 2 minutes:
 
 ### Step 1: Create the Version-Controlled `.githooks` Directory
 
@@ -205,7 +212,7 @@ set -e
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
-echo "🔧 Configuring opinionated Git hooks for $(basename "$REPO_ROOT")..."
+echo "🔧 Configuring Git quality hooks for $(basename "$REPO_ROOT")..."
 git config core.hooksPath .githooks
 chmod +x .githooks/* 2>/dev/null || true
 
@@ -224,28 +231,79 @@ chmod +x scripts/install_git_hooks.sh
 Now commit these files to your repository:
 ```bash
 git add .githooks scripts
-git commit -m "chore(quality): enforce opinionated pre-push quality gates"
+git commit -m "chore(quality): enforce automated pre-push quality gates"
 git push
 ```
 
 ---
 
-## Customizing the Coverage Threshold
+## How to Set, Inspect, or Change Your Coverage Threshold
 
-Instead of a generic 70%, define your team's exact target:
+You and your team have 100% control over your coverage targets. Here are the 5 ways to configure and manage your quality threshold:
 
-### Method A: `.coverage-threshold` File (Recommended)
-Add a `.coverage-threshold` file in your repository root:
+### Method 1: Set Target During Hook Setup (Recommended for New Repos)
+When installing version-controlled hooks into your repository, pass your target percentage directly:
+```bash
+./install.sh --hooks 85
+```
+Or run without arguments to be prompted interactively:
+```bash
+./install.sh --hooks
+# Prompt: Minimum coverage percentage (e.g. 70, 75, 80, 85, 90) [Default: 80]: 85
+```
+
+---
+
+### Method 2: Set or Update via CLI Helper
+From anywhere inside your repository workspace:
+```bash
+pre-push-check --set-threshold 85
+```
+This updates `.coverage-threshold` instantly.
+
+---
+
+### Method 3: Set Directly via Configuration File
+You can write directly to `.coverage-threshold` in the repository root:
 ```bash
 echo "85" > .coverage-threshold
 git add .coverage-threshold
-git commit -m "chore: set coverage gate to 85%"
+git commit -m "chore: set coverage gate threshold to 85%"
 ```
 
-### Method B: Environment Variable Override
+---
+
+### Method 4: Inspect the Active Threshold
+Want to verify which threshold is currently active and where it came from?
+```bash
+pre-push-check --info
+```
+Output:
+```text
+Coverage Threshold Configuration for my_project:
+  Current Threshold: 85% (.coverage-threshold)
+
+💡 To change your threshold:
+  pre-push-check --set-threshold <new_percentage>
+  echo "<new_percentage>" > .coverage-threshold
+```
+
+---
+
+### Method 5: Temporary Single-Push Environment Override
+To test a higher standard or temporarily override the threshold for a single push without modifying the repository file:
 ```bash
 MIN_COVERAGE=90 git push
 ```
+
+---
+
+### 📈 Best Practice: The "Coverage Ratchet" Strategy
+Never feel pressured to start with an unrealistically high number on an existing or legacy codebase:
+1. **Discover Current Baseline**: Run `pre-push-check --threshold 0` to see your current line coverage (e.g. `58.4%`).
+2. **Set Initial Floor**: Set your threshold at or slightly above your baseline (e.g. `pre-push-check --set-threshold 60`).
+3. **Ratchet Upward Sprint-by-Sprint**: As new features are built with full test coverage, raise the gate incrementally (e.g. `65%` -> `70%` -> `75%` -> `80%`).
+4. **Never Regress**: The quality gate guarantees that once a milestone is achieved, no developer can accidentally pull coverage back down.
 
 ---
 
@@ -263,10 +321,24 @@ git push --no-verify
 
 ## Troubleshooting
 
-### Q: `OPINIONATED GATE FAILED: Coverage is below required threshold`
-**Why**: Your overall test coverage does not meet the project's required gate (e.g. 80%).
-**Solution**: Run tests locally with coverage (`flutter test --coverage` or `npm test -- --coverage`) and write tests covering modified or newly added code paths.
+### Q: `QUALITY GATE FAILED: Coverage is below your configured threshold`
+- **Why**: Your overall test coverage does not meet the repository's configured `.coverage-threshold` (e.g. `82.4% < 85.0%`).
+- **Solution 1 (Write Tests)**: Run tests locally with coverage (`flutter test --coverage` or `npm test -- --coverage`) and write tests covering newly added or modified lines.
+- **Solution 2 (Adjust Threshold)**: If your team decides to adjust the project target, run `pre-push-check --set-threshold <new_value>` or edit `.coverage-threshold`.
 
 ### Q: `flutter analyze found issues`
-**Why**: Static analyzer detected dead code, unused imports, or lint errors.
-**Solution**: Fix all warnings and run `flutter analyze` until 0 issues remain.
+- **Why**: Static analyzer detected dead code, unused imports, or lint errors.
+- **Solution**: Fix all warnings and run `flutter analyze` until 0 issues remain.
+
+### Q: How do I bypass hooks for a production incident hotfix?
+- **Solution**: Pass `--no-verify` to git push: `git push --no-verify` (use only for emergency incident response).
+
+---
+
+## 🔗 Related Resources
+
+- **[`readme.md`](./readme.md)**: Main suite overview and quickstart guide.
+- **[`git_push.md`](./git_push.md)**: Active-branch push CLI guide.
+- **[`contribution.md`](./contribution.md)**: Open-source contribution guidelines.
+- **[`license.md`](./license.md)**: MIT License terms.
+

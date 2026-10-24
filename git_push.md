@@ -1,14 +1,14 @@
-# 🚀 `git-push` / `push` — Opinionated Branch Push CLI
+# 🚀 `git-push` / `push` — Active-Branch Git Push CLI
 
-> An opinionated Git utility to enforce clean commit standards, protect production branches, and push directly to active Git branches in both standalone repositories and multi-repository workspaces.
+> A smart Git utility to enforce clean commit standards, protect production branches, and push directly to active Git branches in both standalone repositories and multi-repository workspaces.
 
 ---
 
 ## 📖 Table of Contents
 
-- [The Opinionated Philosophy](#the-opinionated-philosophy)
+- [Core Philosophy](#core-philosophy)
 - [How It Works](#how-it-works)
-- [Opinionated Guards & Features](#opinionated-guards--features)
+- [Safety Guards & Features](#safety-guards--features)
   - [1. Protected Branch Guard](#1-protected-branch-guard)
   - [2. Commit Message Hygiene & Conventional Commits](#2-commit-message-hygiene--conventional-commits)
   - [3. Detached HEAD Protection](#3-detached-head-protection)
@@ -29,11 +29,11 @@
 
 ---
 
-## The Opinionated Philosophy
+## Core Philosophy
 
 Git gives developers absolute freedom—including the freedom to push directly to production branches by accident, write meaningless one-word commit messages like `"fix"` or `"wip"`, and push from detached states.
 
-`git-push` is designed with an **opinionated engineering stance**:
+`git-push` is designed with a **safety-first engineering approach**:
 - **Protect Production**: Accidental pushes to `main` / `master` / `production` must be challenged.
 - **Enforce Commit Quality**: Sloppy commit messages corrupt project history. Conventional commits are encouraged and placeholders are rejected.
 - **Zero Configuration**: Active branches are auto-detected dynamically, and new remote branches are automatically configured with upstream tracking (`-u`).
@@ -64,14 +64,14 @@ Git gives developers absolute freedom—including the freedom to push directly t
 
 ---
 
-## Opinionated Guards & Features
+## Safety Guards & Features
 
 ### 1. Protected Branch Guard
 
 Direct pushes to production branches bypass peer reviews and risk introducing regressions. When pushing to `main`, `master`, or `production`, `git-push` guards the operation:
 
 ```text
-⚠️  OPINIONATED GUARD: You are pushing directly to 'main' in my-web-app.
+⚠️  BRANCH GUARD: You are pushing directly to 'main' in my-web-app.
 Direct pushes to production branches bypass PR reviews. Proceed anyway? [y/N]: 
 ```
 
@@ -103,10 +103,11 @@ SKIP_COMMIT_LINT=1 push "my custom commit"
 Pushing from a detached HEAD leads to lost commits on remote servers. `git-push` detects this condition and instructs the developer how to preserve their commits:
 
 ```text
-❌ OPINIONATED GUARD: Detached HEAD detected in my-app.
+❌ PUSH GUARD: Detached HEAD detected in my-app.
 Pushing from a detached HEAD leads to lost commits on remote.
 Switch to or create a branch first:
   git checkout -b feature-branch-name
+```-branch-name
 ```
 
 ---
@@ -117,9 +118,13 @@ No more `fatal: The current branch has no upstream branch`. `git-push` detects w
 
 ---
 
-### 5. Pre-Push Quality Gate Trigger
+### 5. Pre-Push Quality Gate Trigger (User-Defined Thresholds)
 
-`git-push` relies on your repository's local Git hooks (`.githooks/pre-push`). Before the bytes are transferred to GitHub/GitLab, your local test suite, static analyzer, and coverage gates execute automatically.
+`git-push` relies on your repository's local Git hooks (`.githooks/pre-push`). Before code is transmitted to GitHub/GitLab, your local static analyzer, test suites, and test coverage gates execute against your team's configured `.coverage-threshold`.
+
+- To inspect your current threshold: `pre-push-check --info`
+- To set or change your threshold: `pre-push-check --set-threshold <N>` or `echo "<N>" > .coverage-threshold`
+- For detailed setup and customization: See [pre_push_hooks.md](./pre_push_hooks.md#how-to-set-inspect-or-change-your-coverage-threshold).
 
 ---
 
@@ -305,3 +310,13 @@ flowchart TD
 
 ### Q: `Push blocked: Direct push to 'main' prohibited`
 **Solution**: Create a feature branch with `git checkout -b feature/my-work` and push to it instead, or set `ALLOW_MAIN_PUSH=1 push "commit message"`.
+
+---
+
+## 🔗 Related Resources
+
+- **[`readme.md`](./readme.md)**: Main suite overview and quickstart guide.
+- **[`pre_push_hooks.md`](./pre_push_hooks.md)**: Pre-push quality gatekeeper & coverage guide.
+- **[`contribution.md`](./contribution.md)**: Open-source contribution guidelines.
+- **[`license.md`](./license.md)**: MIT License terms.
+
