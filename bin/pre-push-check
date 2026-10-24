@@ -1,0 +1,285 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# pre-push-check - Opinionated Pre-Push Quality & Coverage Gatekeeper
+# Part of git-cli-scripts (https://github.com/appframesystems/git-cli-scripts)
+# License: MIT
+# ==============================================================================
+# OPINIONATED MANIFEST:
+# 1. Zero Broken Windows: Static analysis must report ZERO errors.
+# 2. 100% Green Test Suite: All unit & widget tests must pass. No flaky skips.
+# 3. User-Defined Strict Coverage: Your repository decides its own coverage target
+#    via .coverage-threshold. No one imposes an arbitrary fixed number on you.
+# ==============================================================================
+set -e
+
+# Terminal formatting
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+  GREEN='\033[0;32m'
+  BLUE='\033[0;34m'
+  YELLOW='\033[1;33m'
+  RED='\033[0;31m'
+  CYAN='\033[0;36m'
+  BOLD='\033[1m'
+  NC='\033[0m'
+else
+  GREEN=''
+  BLUE=''
+  YELLOW=''
+  RED=''
+  CYAN=''
+  BOLD=''
+  NC=''
+fi
+
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+cd "$REPO_ROOT"
+
+APP_NAME="$(basename "$REPO_ROOT")"
+
+show_help() {
+  echo -e "${BOLD}pre-push-check${NC} - Opinionated Pre-Push Quality & Coverage Gatekeeper"
+  echo ""
+  echo -e "${BOLD}USAGE:${NC}"
+  echo "  pre-push-check [OPTIONS]"
+  echo ""
+  echo -e "${BOLD}OPTIONS:${NC}"
+  echo "  -s, --set-threshold <N>   Set and save minimum coverage threshold in .coverage-threshold"
+  echo "  -t, --threshold <N>       Run checks with a one-time custom coverage threshold"
+  echo "  -h, --help                Show this help message and exit"
+  echo ""
+  echo -e "${BOLD}HOW TO SET OR CHANGE YOUR COVERAGE THRESHOLD:${NC}"
+  echo "  1. CLI command:           pre-push-check --set-threshold 85"
+  echo "  2. Write to config file:  echo \"85\" > .coverage-threshold"
+  echo "  3. Environment override:  MIN_COVERAGE=85 git push"
+}
+
+# Handle --set-threshold
+if [ "$1" = "-s" ] || [ "$1" = "--set-threshold" ]; then
+  if [ -z "$2" ]; then
+    echo -e "${RED}❌ Error: Please specify a threshold percentage (e.g. pre-push-check --set-threshold 85)${NC}"
+    exit 1
+  fi
+  echo "$2" > .coverage-threshold
+  echo -e "${GREEN}🎯 Coverage threshold set to ${BOLD}$2%${NC} (saved in .coverage-threshold)${NC}"
+  echo -e "   Commit .coverage-threshold to your repository to share with your team."
+  exit 0
+fi
+
+# Handle --help
+if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+  show_help
+  exit 0
+fi
+
+# Handle --threshold flag
+ONE_TIME_THRESHOLD=""
+if [ "$1" = "-t" ] || [ "$1" = "--threshold" ]; then
+  ONE_TIME_THRESHOLD="$2"
+  shift 2
+fi
+
+# Resolve coverage threshold
+THRESHOLD_SOURCE=""
+if [ -n "$ONE_TIME_THRESHOLD" ]; then
+  MIN_COVERAGE="$ONE_TIME_THRESHOLD"
+  THRESHOLD_SOURCE="--threshold flag"
+elif [ -n "${MIN_COVERAGE:-}" ]; then
+  THRESHOLD_SOURCE="MIN_COVERAGE env variable"
+elif [ -f ".coverage-threshold" ]; then
+  MIN_COVERAGE="$(cat .coverage-threshold | tr -d '[:space:]')"
+  THRESHOLD_SOURCE=".coverage-threshold"
+elif [ -f "tool/check_coverage.dart" ]; then
+  DETECTED_MIN="$(grep -Eo 'minCoverage\s*=\s*[0-9]+' tool/check_coverage.dart 2>/dev/null | grep -Eo '[0-9]+' || true)"
+  if [ -n "$DETECTED_MIN" ]; then
+    MIN_COVERAGE="$DETECTED_MIN"
+    THRESHOLD_SOURCE="tool/check_coverage.dart"
+  fi
+fi
+
+# If no threshold is configured anywhere, prompt interactively or guide user
+if [ -z "$MIN_COVERAGE" ]; then
+  if [ -t 0 ]; then
+    echo -e "${YELLOW}⚙️  No test coverage threshold configured yet for ${APP_NAME}.${NC}"
+    echo "Enter your repository's desired minimum coverage percentage (e.g. 75, 80, 85, 90):"
+    read -r -p "Target threshold: " USER_THRESH
+    if [ -n "$USER_THRESH" ]; then
+      echo "$USER_THRESH" > .coverage-threshold
+      MIN_COVERAGE="$USER_THRESH"
+      THRESHOLD_SOURCE=".coverage-threshold (newly set)"
+      echo -e "${GREEN}✅ Saved ${MIN_COVERAGE}% in .coverage-threshold${NC}"
+    else
+      MIN_COVERAGE="80"
+      THRESHOLD_SOURCE="default fallback (80%)"
+    fi
+  else
+    MIN_COVERAGE="80"
+    THRESHOLD_SOURCE="default fallback (80%)"
+  fi
+fi
+
+echo -e "${BLUE}====================================================${NC}"
+echo -e "${BOLD}🛡️  OPINIONATED PRE-PUSH GATE:${NC} ${CYAN}${APP_NAME}${NC}"
+echo -e "   Target Coverage:   ${BOLD}>= ${MIN_COVERAGE}.00%${NC} (${THRESHOLD_SOURCE})"
+echo -e "   Analysis Policy:   ${BOLD}Zero-Tolerance (0 issues)${NC}"
+echo -e "${BLUE}====================================================${NC}"
+
+# ------------------------------------------------------------------------------
+# 1. FLUTTER / DART REPOSITORY
+# ------------------------------------------------------------------------------
+if [ -f "pubspec.yaml" ]; then
+  echo -e "📱 Project Type: ${BOLD}Flutter / Dart${NC}"
+
+  # A. Static Analysis (Zero-tolerance)
+  echo -e "🔍 Step 1/3: Running ${BOLD}flutter analyze${NC}..."
+  if flutter analyze; then
+    echo -e "${GREEN}✅ Analysis passed: 0 issues found.${NC}"
+  else
+    echo -e "${RED}❌ OPINIONATED GATE FAILED: flutter analyze found issues!${NC}"
+    echo -e "${YELLOW}👉 Clean code policy: Resolve all static analysis warnings before pushing.${NC}"
+    exit 1
+  fi
+
+  # B. Unit & Widget Tests
+  echo -e "🧪 Step 2/3: Running ${BOLD}flutter test --coverage${NC}..."
+  if flutter test --coverage; then
+    echo -e "${GREEN}✅ All Flutter tests passed!${NC}"
+  else
+    echo -e "${RED}❌ OPINIONATED GATE FAILED: One or more Flutter tests failed!${NC}"
+    echo -e "${YELLOW}👉 Broken code cannot reach remote. Fix failing tests first.${NC}"
+    exit 1
+  fi
+
+  # C. Test Coverage Gate
+  echo -e "📊 Step 3/3: Evaluating code coverage against ${BOLD}${MIN_COVERAGE}%${NC} gate..."
+  
+  if [ -f "tool/check_coverage.dart" ]; then
+    dart run tool/check_coverage.dart --min "$MIN_COVERAGE"
+  elif [ -f "coverage/lcov.info" ]; then
+    TOTAL_LINES=0
+    HIT_LINES=0
+
+    # Parse lcov.info
+    while IFS= read -r line; do
+      if [[ "$line" =~ ^LF:([0-9]+) ]]; then
+        TOTAL_LINES=$((TOTAL_LINES + BASH_REMATCH[1]))
+      elif [[ "$line" =~ ^LH:([0-9]+) ]]; then
+        HIT_LINES=$((HIT_LINES + BASH_REMATCH[1]))
+      fi
+    done < coverage/lcov.info
+
+    if [ "$TOTAL_LINES" -gt 0 ]; then
+      COVERAGE_BPS=$((HIT_LINES * 10000 / TOTAL_LINES))
+      COVERAGE_INT=$((COVERAGE_BPS / 100))
+      COVERAGE_DEC=$((COVERAGE_BPS % 100))
+      if [ $COVERAGE_DEC -lt 10 ]; then
+        COVERAGE_DEC="0${COVERAGE_DEC}"
+      fi
+
+      COVERAGE_STR="${COVERAGE_INT}.${COVERAGE_DEC}%"
+      REQUIRED_STR="${MIN_COVERAGE}.00%"
+
+      echo -e "   Total Executable Lines: ${TOTAL_LINES}"
+      echo -e "   Covered Lines:          ${HIT_LINES}"
+      echo -e "   Overall Coverage:       ${BOLD}${COVERAGE_STR}${NC} (Required: >= ${REQUIRED_STR})"
+
+      REQ_BPS=$((MIN_COVERAGE * 100))
+      if [ "$COVERAGE_BPS" -lt "$REQ_BPS" ]; then
+        NEEDED_LINES=$(( (REQ_BPS * TOTAL_LINES / 10000) - HIT_LINES ))
+        echo -e "${RED}❌ OPINIONATED GATE FAILED: Coverage (${COVERAGE_STR}) is below required ${REQUIRED_STR}!${NC}"
+        echo -e "${YELLOW}👉 Deficit: Approximately ${NEEDED_LINES} more lines must be covered by tests.${NC}"
+        echo ""
+        echo -e "${CYAN}💡 Want to change or customize your threshold for this repository?${NC}"
+        echo -e "   Run: ${BOLD}echo \"<new_value>\" > .coverage-threshold${NC}"
+        echo -e "   Or:  ${BOLD}pre-push-check --set-threshold <new_value>${NC}"
+        echo -e "   Or override for this push only: ${BOLD}MIN_COVERAGE=<new_value> git push${NC}"
+        exit 1
+      else
+        echo -e "${GREEN}✅ Coverage gate passed! (${COVERAGE_STR} >= ${REQUIRED_STR})${NC}"
+      fi
+    fi
+  else
+    echo -e "${YELLOW}⚠️  No coverage report (coverage/lcov.info) found. Skipping coverage gate.${NC}"
+  fi
+
+# ------------------------------------------------------------------------------
+# 2. NODE.JS / TYPESCRIPT / JAVASCRIPT REPOSITORY
+# ------------------------------------------------------------------------------
+elif [ -f "package.json" ]; then
+  echo -e "🌐 Project Type: ${BOLD}Node.js / TypeScript / Web${NC}"
+
+  PKG_MGR="npm"
+  if [ -f "pnpm-lock.yaml" ]; then
+    PKG_MGR="pnpm"
+  elif [ -f "yarn.lock" ]; then
+    PKG_MGR="yarn"
+  elif [ -f "bun.lockb" ]; then
+    PKG_MGR="bun"
+  fi
+
+  # A. Lint Check
+  if grep -q '"lint"' package.json 2>/dev/null; then
+    echo -e "🔍 Step 1/2: Running ${BOLD}${PKG_MGR} run lint${NC}..."
+    if $PKG_MGR run lint; then
+      echo -e "${GREEN}✅ Linter passed: 0 errors.${NC}"
+    else
+      echo -e "${RED}❌ OPINIONATED GATE FAILED: Linting errors detected!${NC}"
+      echo -e "${YELLOW}👉 Run '${PKG_MGR} run lint -- --fix' or resolve linter errors before pushing.${NC}"
+      exit 1
+    fi
+  fi
+
+  # B. Test Suite
+  if grep -q '"test"' package.json 2>/dev/null && ! grep -q 'no test specified' package.json 2>/dev/null; then
+    echo -e "🧪 Step 2/2: Running ${BOLD}${PKG_MGR} test${NC}..."
+    if $PKG_MGR test; then
+      echo -e "${GREEN}✅ All tests passed!${NC}"
+    else
+      echo -e "${RED}❌ OPINIONATED GATE FAILED: Test suite failure!${NC}"
+      exit 1
+    fi
+  fi
+
+# ------------------------------------------------------------------------------
+# 3. PYTHON REPOSITORY
+# ------------------------------------------------------------------------------
+elif [ -f "pyproject.toml" ] || [ -f "requirements.txt" ] || [ -f "setup.py" ]; then
+  echo -e "🐍 Project Type: ${BOLD}Python${NC}"
+
+  if command -v ruff >/dev/null 2>&1; then
+    echo -e "🔍 Running ${BOLD}ruff check .${NC}..."
+    ruff check .
+    echo -e "${GREEN}✅ Ruff passed: 0 issues.${NC}"
+  elif command -v flake8 >/dev/null 2>&1; then
+    echo -e "🔍 Running ${BOLD}flake8 .${NC}..."
+    flake8 .
+    echo -e "${GREEN}✅ Flake8 passed: 0 issues.${NC}"
+  fi
+
+  if command -v pytest >/dev/null 2>&1; then
+    echo -e "🧪 Running ${BOLD}pytest${NC}..."
+    pytest
+    echo -e "${GREEN}✅ Pytest passed!${NC}"
+  fi
+
+# ------------------------------------------------------------------------------
+# 4. GOLANG REPOSITORY
+# ------------------------------------------------------------------------------
+elif [ -f "go.mod" ]; then
+  echo -e "🐹 Project Type: ${BOLD}Go${NC}"
+
+  echo -e "🔍 Running ${BOLD}go vet ./...${NC}..."
+  go vet ./...
+  echo -e "${GREEN}✅ go vet passed: 0 issues.${NC}"
+
+  echo -e "🧪 Running ${BOLD}go test -cover ./...${NC}..."
+  go test -cover ./...
+  echo -e "${GREEN}✅ go test passed!${NC}"
+
+else
+  echo -e "${YELLOW}ℹ️  No framework-specific validator detected.${NC}"
+fi
+
+echo -e "${BLUE}====================================================${NC}"
+echo -e "${GREEN}🎉 All opinionated quality gates passed successfully!${NC}"
+echo -e "${BLUE}====================================================${NC}"
+exit 0

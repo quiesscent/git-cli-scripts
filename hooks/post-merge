@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# Git Post-Merge Hook Template
+# Part of git-cli-scripts (https://github.com/appframesystems/git-cli-scripts)
+# Place this in .githooks/post-merge or .git/hooks/post-merge.
+# Ensures that newly pulled or updated hooks maintain executable permissions.
+# ==============================================================================
+set -e
+
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+cd "$REPO_ROOT"
+
+if [ -d ".githooks" ]; then
+  chmod +x .githooks/* 2>/dev/null || true
+fi
+
+if [ -d "scripts" ]; then
+  chmod +x scripts/*.sh 2>/dev/null || true
+fi
+
+exit 0

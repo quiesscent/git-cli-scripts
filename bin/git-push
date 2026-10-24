@@ -1,0 +1,241 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# git-push / push - Opinionated Smart Commit & Push to Active Git Branch
+# Part of git-cli-scripts (https://github.com/appframesystems/git-cli-scripts)
+# License: MIT
+# ==============================================================================
+set -e
+
+# Terminal colors (disabled if not a tty or NO_COLOR is set)
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+  GREEN='\033[0;32m'
+  BLUE='\033[0;34m'
+  YELLOW='\033[1;33m'
+  RED='\033[0;31m'
+  CYAN='\033[0;36m'
+  BOLD='\033[1m'
+  NC='\033[0m'
+else
+  GREEN=''
+  BLUE=''
+  YELLOW=''
+  RED=''
+  CYAN=''
+  BOLD=''
+  NC=''
+fi
+
+REMOTE_NAME="${GIT_PUSH_REMOTE:-origin}"
+
+show_help() {
+  echo -e "${BOLD}git-push / push${NC} - Opinionated Active-Branch Git Push Utility."
+  echo ""
+  echo -e "${BOLD}USAGE:${NC}"
+  echo "  # 1. Inside any Git repository:"
+  echo "  push \"<commit_message>\""
+  echo "  git-push \"<commit_message>\""
+  echo ""
+  echo "  # 2. From a multi-repo parent workspace:"
+  echo "  push <folder_name_or_alias> \"<commit_message>\""
+  echo "  git-push <folder_name_or_alias> \"<commit_message>\""
+  echo ""
+  echo -e "${BOLD}OPINIONATED GUARDS:${NC}"
+  echo "  🛡️  Protected Branch Guard: Confirms before pushing directly to main/master/production."
+  echo "  📝 Conventional Commit Linter: Rejects sloppy placeholders ('wip', 'fix', 'update')."
+  echo "  🚫 Detached HEAD Guard: Blocks pushes when HEAD is detached."
+  echo "  🪝 Automated Quality Gate: Enforces local pre-push validation (analyzer, coverage, lints)."
+  echo ""
+  echo -e "${BOLD}OPTIONS:${NC}"
+  echo "  -h, --help       Show this help message and exit"
+  echo "  -v, --version    Show script version"
+  echo ""
+  echo -e "${BOLD}ENVIRONMENT VARIABLES:${NC}"
+  echo "  GIT_PUSH_REMOTE   Remote to push to (default: 'origin')"
+  echo "  ALLOW_MAIN_PUSH   Set to 1 to bypass the protected branch prompt"
+  echo "  SKIP_COMMIT_LINT  Set to 1 to disable conventional commit checks"
+  echo "  NO_COLOR          Disable ANSI colors"
+  echo ""
+  echo -e "${BOLD}EXAMPLES:${NC}"
+  echo "  push \"feat(auth): add refresh token support\""
+  echo "  push client \"fix(ui): repair layout overflow on tablet\""
+  echo "  push api \"refactor(db): optimize user query execution\""
+}
+
+if [ "$1" = "-v" ] || [ "$1" = "--version" ]; then
+  echo "git-push version 2.0.0 (opinionated)"
+  exit 0
+fi
+
+if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+  show_help
+  exit 0
+fi
+
+# Detect whether current working directory is already inside a Git repo
+IN_GIT_REPO=0
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  IN_GIT_REPO=1
+fi
+
+TARGET_DIR=""
+COMMIT_MSG=""
+
+if [ "$IN_GIT_REPO" -eq 1 ]; then
+  # Inside a git repository
+  if [ -n "$1" ] && [ ! -d "$1/.git" ] && { [ ! -d "$1" ] || [ "$1" = "." ]; }; then
+    TARGET_DIR="$(pwd)"
+    COMMIT_MSG="$*"
+  elif [ -n "$1" ] && [ -d "$1" ] && git -C "$1" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    TARGET_DIR="$(cd "$1" && pwd)"
+    shift
+    COMMIT_MSG="$*"
+  else
+    TARGET_DIR="$(pwd)"
+    COMMIT_MSG="$*"
+  fi
+else
+  # From parent workspace
+  if [ -z "$1" ]; then
+    echo -e "${RED}❌ Error: Not inside a Git repository, and no folder was specified.${NC}"
+    echo ""
+    show_help
+    exit 1
+  fi
+
+  INPUT_FOLDER="$1"
+  shift
+  COMMIT_MSG="$*"
+
+  CLEAN_FOLDER="${INPUT_FOLDER%/}"
+
+  if [ -d "$CLEAN_FOLDER" ]; then
+    TARGET_DIR="$(cd "$CLEAN_FOLDER" && pwd)"
+  else
+    # Match child directory by partial name / alias (e.g., 'client' for 'bingwa_client_mobile')
+    MATCHING_DIR=$(find . -maxdepth 2 -type d -name "*${CLEAN_FOLDER}*" 2>/dev/null | head -n 1 || true)
+    if [ -n "$MATCHING_DIR" ] && [ -d "$MATCHING_DIR" ]; then
+      TARGET_DIR="$(cd "$MATCHING_DIR" && pwd)"
+    fi
+  fi
+
+  if [ -z "$TARGET_DIR" ] || [ ! -d "$TARGET_DIR" ]; then
+    echo -e "${RED}❌ Error: Could not locate directory '${INPUT_FOLDER}'.${NC}"
+    exit 1
+  fi
+fi
+
+if ! git -C "$TARGET_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  echo -e "${RED}❌ Error: '${TARGET_DIR}' is not a valid Git repository.${NC}"
+  exit 1
+fi
+
+REPO_NAME="$(basename "$TARGET_DIR")"
+ACTIVE_BRANCH="$(git -C "$TARGET_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+
+# 1. OPINIONATED GUARD: Detached HEAD protection
+if [ -z "$ACTIVE_BRANCH" ] || [ "$ACTIVE_BRANCH" = "HEAD" ]; then
+  echo -e "${RED}❌ OPINIONATED GUARD: Detached HEAD detected in ${REPO_NAME}.${NC}"
+  echo "Pushing from a detached HEAD leads to lost commits on remote."
+  echo "Switch to or create a branch first:"
+  echo "  git -C \"$TARGET_DIR\" checkout -b feature-branch-name"
+  exit 1
+fi
+
+# 2. OPINIONATED GUARD: Protected branch safety (main / master / production)
+if [ "$ACTIVE_BRANCH" = "main" ] || [ "$ACTIVE_BRANCH" = "master" ] || [ "$ACTIVE_BRANCH" = "production" ]; then
+  if [ "${ALLOW_MAIN_PUSH:-0}" != "1" ]; then
+    echo -e "${YELLOW}⚠️  OPINIONATED GUARD: You are pushing directly to '${ACTIVE_BRANCH}' in ${REPO_NAME}.${NC}"
+    if [ -t 0 ]; then
+      read -r -p "Direct pushes to production branches bypass PR reviews. Proceed anyway? [y/N]: " CONFIRM_PUSH
+      if [[ ! "$CONFIRM_PUSH" =~ ^[Yy]$ ]]; then
+        echo -e "${RED}❌ Push aborted. Create a feature branch and submit a PR.${NC}"
+        exit 1
+      fi
+    else
+      echo -e "${RED}❌ Push blocked: Direct push to '${ACTIVE_BRANCH}' prohibited in automated mode.${NC}"
+      echo -e "   Set ALLOW_MAIN_PUSH=1 to override."
+      exit 1
+    fi
+  fi
+fi
+
+# 3. Prompt for commit message if empty in interactive terminal
+if [ -z "$COMMIT_MSG" ]; then
+  if [ -t 0 ]; then
+    echo -e "${YELLOW}💬 No commit message supplied for [${REPO_NAME} (${ACTIVE_BRANCH})].${NC}"
+    read -r -p "Enter commit message: " COMMIT_MSG
+  fi
+  if [ -z "$COMMIT_MSG" ]; then
+    echo -e "${RED}❌ Error: Commit message cannot be empty.${NC}"
+    exit 1
+  fi
+fi
+
+# 4. OPINIONATED GUARD: Conventional Commits & Quality Linter
+if [ "${SKIP_COMMIT_LINT:-0}" != "1" ]; then
+  # Reject sloppy single-word placeholders
+  LOWER_MSG="$(echo "$COMMIT_MSG" | tr '[:upper:]' '[:lower:]' | xargs)"
+  case "$LOWER_MSG" in
+    wip|"fix"|"update"|"test"|"changes"|"commit"|"done"|"asdf"|"temp"|"save")
+      echo -e "${RED}❌ OPINIONATED REJECTION: '${COMMIT_MSG}' is a sloppy commit message.${NC}"
+      echo -e "${YELLOW}👉 High-performing teams write descriptive commit messages.${NC}"
+      echo -e "   Example: 'feat(auth): support biometric login' or 'fix(api): correct null handling'"
+      exit 1
+      ;;
+  esac
+
+  if [ "${#COMMIT_MSG}" -lt 6 ]; then
+    echo -e "${RED}❌ OPINIONATED REJECTION: Commit message is too short (min 6 characters required).${NC}"
+    exit 1
+  fi
+
+  # Check Conventional Commit pattern: <type>(<scope>)?: <description>
+  CONVENTIONAL_REGEX="^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-zA-Z0-9_.-]+\))?!?: .+"
+  if [[ ! "$COMMIT_MSG" =~ $CONVENTIONAL_REGEX ]]; then
+    echo -e "${YELLOW}💡 TIP: Follow Conventional Commits format for automated changelogs:${NC}"
+    echo -e "   <type>(<scope>): <subject>  ➔  e.g. 'feat(auth): add refresh token'"
+  fi
+fi
+
+echo -e "${BLUE}====================================================${NC}"
+echo -e "${BOLD}🚀 Git Push:${NC} ${CYAN}${REPO_NAME}${NC} ➜ ${GREEN}${ACTIVE_BRANCH}${NC}"
+echo -e "   Commit:   ${BOLD}${COMMIT_MSG}${NC}"
+echo -e "   Remote:   ${REMOTE_NAME}"
+echo -e "${BLUE}====================================================${NC}"
+
+cd "$TARGET_DIR"
+
+# Stage all changes
+git add -A
+
+# Check for staged changes
+if ! git diff --cached --quiet; then
+  echo -e "📝 Staging changes and committing..."
+  git commit -m "$COMMIT_MSG"
+  COMMIT_HASH="$(git rev-parse --short HEAD)"
+  echo -e "${GREEN}✅ Committed (${COMMIT_HASH}): ${COMMIT_MSG}${NC}"
+else
+  # Check if there are already unpushed commits
+  UNPUSHED_COUNT="$(git log "${REMOTE_NAME}/${ACTIVE_BRANCH}..HEAD" --oneline 2>/dev/null | wc -l | tr -d ' ' || echo "0")"
+  if [ "$UNPUSHED_COUNT" -gt 0 ]; then
+    echo -e "${YELLOW}ℹ️  Working tree clean, but found ${UNPUSHED_COUNT} unpushed commit(s) on '${ACTIVE_BRANCH}'.${NC}"
+  else
+    echo -e "${YELLOW}ℹ️  Nothing to commit and active branch '${ACTIVE_BRANCH}' is already up-to-date with ${REMOTE_NAME}.${NC}"
+    echo -e "${GREEN}✨ Workspace is completely clean.${NC}"
+    exit 0
+  fi
+fi
+
+# Push to the active branch (triggers pre-push hooks automatically)
+echo -e "⬆️  Pushing to ${REMOTE_NAME}/${ACTIVE_BRANCH}..."
+
+if git rev-parse --verify --quiet "${REMOTE_NAME}/${ACTIVE_BRANCH}" >/dev/null 2>&1; then
+  git push "$REMOTE_NAME" "$ACTIVE_BRANCH"
+else
+  echo -e "${YELLOW}ℹ️  Remote branch does not exist yet. Setting upstream (-u)...${NC}"
+  git push -u "$REMOTE_NAME" "$ACTIVE_BRANCH"
+fi
+
+echo -e "${BLUE}====================================================${NC}"
+echo -e "${GREEN}🎉 Successfully pushed ${REPO_NAME} to ${REMOTE_NAME}/${ACTIVE_BRANCH}!${NC}"
+echo -e "${BLUE}====================================================${NC}"

@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# Git Pre-Push Hook Template
+# Part of git-cli-scripts (https://github.com/appframesystems/git-cli-scripts)
+# Place this in .githooks/pre-push or .git/hooks/pre-push in any repository.
+# ==============================================================================
+set -e
+
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+cd "$REPO_ROOT"
+
+# Check if pre-push-check is installed globally in PATH or locally in scripts/
+if command -v pre-push-check >/dev/null 2>&1; then
+  pre-push-check
+elif [ -f "./scripts/pre-push-check" ]; then
+  ./scripts/pre-push-check
+elif [ -f "./scripts/validate_coverage.sh" ]; then
+  ./scripts/validate_coverage.sh
+else
+  # Inline fallback detection
+  if [ -f "pubspec.yaml" ]; then
+    echo "🔍 Running Flutter analyze..."
+    flutter analyze
+    echo "🧪 Running Flutter test..."
+    flutter test
+  elif [ -f "package.json" ]; then
+    if grep -q '"lint"' package.json 2>/dev/null; then
+      npm run lint
+    fi
+  fi
+fi
+
+exit 0
